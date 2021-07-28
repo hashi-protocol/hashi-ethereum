@@ -25,4 +25,8 @@ contract tzNFT is ERC721URIStorage, Ownable {
 
         return newItemId;
     }
+
+    function burnTzNFT(uint256 tokenId) public {
+        _burn(tokenId);
+    }
 }
