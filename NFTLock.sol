@@ -12,57 +12,24 @@ contract NFTLock is INFTLock, IERC721Receiver {
     struct NFT {
         uint externalTokenId;
         address tokenContractAddress;
-        State state;
+        address depositor;
     }
 
-    mapping (address => mapping (uint256 => NFT)) tokens;
-    mapping (address => uint256) totalTokensByAddress;
+    mapping (address => mapping (uint256 => uint256)) internalIdsByAddress;
+    mapping (address => uint256) totalLockedTokensByAddress;
+    mapping (uint256 => NFT) lockedTokenById;
+
+    uint256[] releasedIds;
 
     uint256 totalDepositedTokens;
-
-    address private admin;
-
-
-    /** Stages that every NFT gets trough.
-      *   deposited - During this state only lock is allowed.
-      *   locked - During this stage tezos wNFT mint is allowed.
-      *   wrapMinted - At this stage Tezos wNFT was minted, the unlock is not allowed.
-      *   wrapBurned - At this stage Tezos wNFT was burned, the unlock is now allowed.
-      *   unlocked - This stage gives owner opportunity to withdraw its NFT.
-    */
-    enum State { deposited, locked, wrapMinted, wrapBurned, unlocked }
 
     /** @dev Events
     *
     */
     event TokenLocked(uint256 tokenId, address from);
     event TokenUnlocked(uint256 tokenId, address unlockerAddress);
-    event NFTReceived(address contractAddress, uint256 externalTokenId, uint256 internalTokenId, address from);
+    event NFTReceived(address contractAddress, uint256 externalTokenId, address from);
     event NFTWithdrawn(uint256 tokenId, address to);
-
-    /** @dev Modifiers
-    *
-    */
-    modifier onlyAdmin() {
-        require(msg.sender == admin);
-        _;
-    }
-
-    modifier isDeposited(uint256 internalTokenId) {
-        NFT memory token = tokens[msg.sender][internalTokenId];
-
-        require(internalTokenId <= totalTokensByAddress[msg.sender] &&
-            ERC721(token.tokenContractAddress).ownerOf(token.externalTokenId) == address(this),
-            "NFT Locker: Token must be deposited");
-        _;
-    }
-
-    /** @dev Constructor
-    *
-    */
-    constructor() {
-        admin = msg.sender;
-    }
 
     function onERC721Received(
         address,
@@ -71,114 +38,111 @@ contract NFTLock is INFTLock, IERC721Receiver {
         bytes calldata
     ) external override returns(bytes4) {
 
-        uint256 totalTokens = totalTokensByAddress[from];
-        tokens[from][totalTokens] = NFT(tokenId, msg.sender, State.deposited);
-        totalDepositedTokens++;
-        totalTokensByAddress[from]++;
+        emit NFTReceived(msg.sender, tokenId, from);
 
-
-        emit NFTReceived(msg.sender, tokenId, totalTokens, from);
+        NFT memory token = NFT(tokenId, msg.sender, from);
+        lockToken(token);
 
         return this.onERC721Received.selector;
     }
 
-    function lockToken(uint256 internalTokenId) external override isDeposited(internalTokenId){
+    function lockToken(NFT memory token) internal {
 
-        NFT storage token = tokens[msg.sender][internalTokenId];
+        // find a released id or take a new one
+        uint256 internalTokenId;
+        if (releasedIds.length > 0) {
+            internalTokenId = releasedIds[releasedIds.length - 1];
+            delete releasedIds[releasedIds.length - 1];
+        } else {
+            internalTokenId = totalDepositedTokens;
+        }
 
-        require(token.state == State.locked, "NFT Locker: The token is already locked");
+        uint256 totalTokens = totalLockedTokensByAddress[token.depositor];
+        internalIdsByAddress[token.depositor][totalTokens] = internalTokenId;
+        lockedTokenById[internalTokenId] = token;
+        totalLockedTokensByAddress[token.depositor]++;
+        totalDepositedTokens++;
 
-        token.state = State.locked;
-
-        emit TokenLocked(internalTokenId, msg.sender);
+        emit TokenLocked(internalTokenId, token.depositor);
     }
 
-    function unlockToken(uint256 internalTokenId) external override isDeposited(internalTokenId) {
+    function unlockToken(uint256 internalTokenId, address depositor) internal {
 
-        NFT storage token = tokens[msg.sender][internalTokenId];
+        releasedIds.push(internalTokenId);
 
-        require(token.state == State.wrapBurned || token.state == State.locked,
-            "NFT Locker: Token must be locked and not present on tezos blockchain");
+        delete lockedTokenById[internalTokenId];
 
-        token.state == State.unlocked;
+        // delete from internalIdsByAddress of a depositor
+        uint256 totalTokens = totalLockedTokensByAddress[depositor];
+        for (uint256 i; i < totalTokens; i++) {
+            if (internalTokenId == internalIdsByAddress[depositor][i]) {
+                delete internalIdsByAddress[depositor][i];
+                break;
+            }
+        }
+        totalLockedTokensByAddress[depositor]--;
+        totalDepositedTokens--;
 
         emit TokenUnlocked(internalTokenId, msg.sender);
     }
 
-    function withdraw(uint256 internalTokenId) external override isDeposited(internalTokenId) {
+    function withdraw(uint256 internalTokenId) external override {
 
-        NFT storage token = tokens[msg.sender][internalTokenId];
+        NFT storage token = lockedTokenById[internalTokenId];
+        address depositor = token.depositor;
+        address sendTo = token.depositor;
 
-        require(token.state == State.unlocked, "NFT Locker: Unlock you token before to withdraw");
+        if (isMintedOnTz(internalTokenId)) {
 
-        ERC721(token.tokenContractAddress).safeTransferFrom(address(this), msg.sender, token.externalTokenId);
+            address newNFTOwner;
+            bool isBurned;
 
-        uint256 totalTokens = totalTokensByAddress[msg.sender];
-
-        // switch NFT positions in order to optimize a gas
-        if (internalTokenId != totalTokens - 1) {
-            token = tokens[msg.sender][totalTokens - 1];
-        }
-        totalTokensByAddress[msg.sender]--;
-        totalDepositedTokens--;
-
-        emit NFTWithdrawn(internalTokenId, msg.sender);
-    }
-
-    function tokenWrapped(address NFTOwner, uint256 internalTokenId) external override onlyAdmin {
-
-        NFT storage token = tokens[NFTOwner][internalTokenId];
-        token.state = State.wrapMinted;
-    }
-
-    function tokenBurned(address oldNFTOwner, address newNFTOwner, uint256 internalTokenId) external override onlyAdmin {
-
-
-        NFT storage token = tokens[oldNFTOwner][internalTokenId];
-
-        if (oldNFTOwner != newNFTOwner) {
-
-            uint256 totalTokens = totalTokensByAddress[oldNFTOwner];
-
-            // remove token from an old owner
-            if (internalTokenId != totalTokens - 1) {
-                token = tokens[oldNFTOwner][totalTokens - 1];
-            }
-            totalTokensByAddress[oldNFTOwner]--;
-
-            // add token to a new owner
-            totalTokens = totalTokensByAddress[newNFTOwner];
-            tokens[newNFTOwner][totalTokens] = token;
-            totalTokensByAddress[newNFTOwner]++;
+            (isBurned, newNFTOwner) = isBurnedOnTz(internalTokenId);
+            require(isBurned, "NFT Locker: Burn your wrapped token before to unlock");
+            sendTo = newNFTOwner;
         }
 
-        token.state = State.wrapBurned;
+        uint256 externalTokenId = token.externalTokenId;
+        ERC721(token.tokenContractAddress).safeTransferFrom(address(this), sendTo, externalTokenId);
+
+        // delete NFT from the storage
+        unlockToken(internalTokenId, depositor);
+
+        emit NFTWithdrawn(internalTokenId, sendTo);
     }
 
-    function getUserNFTs() public view returns (
+    //it's a mock of a call to oracle function
+    function isMintedOnTz(uint256 internalTokenId) internal pure returns (bool) {
+        internalTokenId++;
+        return true;
+    }
+
+    //it's a mock of a call to oracle function
+    function isBurnedOnTz(uint256 internalTokenId) internal pure returns (bool, address) {
+        internalTokenId++;
+        return (true, address(0));
+    }
+
+    function getUserNFTs() external view override returns (
         uint256[] memory externalTokenIds,
         uint256[] memory internalTokenIds,
-        address[] memory tokenContractAddresses,
-        State[] memory states) {
+        address[] memory tokenContractAddresses) {
 
-        uint256 totalTokens = totalTokensByAddress[msg.sender];
+        uint256 totalTokens = totalLockedTokensByAddress[msg.sender];
 
         externalTokenIds = new uint[](totalTokens);
         tokenContractAddresses = new address[](totalTokens);
-        states = new State[](totalTokens);
 
         for (uint i = 0; i < totalTokens; i++) {
 
-            NFT memory token = tokens[msg.sender][i];
+            uint256 internalTokenId = internalIdsByAddress[msg.sender][i];
+            NFT storage token = lockedTokenById[internalTokenId];
 
             externalTokenIds[i] = token.externalTokenId;
             tokenContractAddresses[i] = token.tokenContractAddress;
-            states[i] = token.state;
-
-            // internalTokenId is the index of an array
-            internalTokenIds[i] = i;
+            internalTokenIds[i] = internalTokenId;
         }
 
-        return (externalTokenIds, internalTokenIds, tokenContractAddresses, states);
+        return (externalTokenIds, internalTokenIds, tokenContractAddresses);
     }
 }
