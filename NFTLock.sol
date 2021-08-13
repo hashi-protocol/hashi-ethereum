@@ -15,8 +15,6 @@ contract NFTLock is INFTLock, IERC721Receiver {
         address depositor;
     }
 
-    mapping (address => mapping (uint256 => uint256)) internalIdsByAddress;
-    mapping (address => uint256) totalLockedTokensByAddress;
     mapping (uint256 => NFT) lockedTokenById;
 
     uint256[] releasedIds;
@@ -57,30 +55,16 @@ contract NFTLock is INFTLock, IERC721Receiver {
             internalTokenId = totalDepositedTokens;
         }
 
-        uint256 totalTokens = totalLockedTokensByAddress[token.depositor];
-        internalIdsByAddress[token.depositor][totalTokens] = internalTokenId;
         lockedTokenById[internalTokenId] = token;
-        totalLockedTokensByAddress[token.depositor]++;
         totalDepositedTokens++;
 
         emit TokenLocked(internalTokenId, token.depositor);
     }
 
-    function unlockToken(uint256 internalTokenId, address depositor) internal {
+    function unlockToken(uint256 internalTokenId) internal {
 
         releasedIds.push(internalTokenId);
-
         delete lockedTokenById[internalTokenId];
-
-        // delete from internalIdsByAddress of a depositor
-        uint256 totalTokens = totalLockedTokensByAddress[depositor];
-        for (uint256 i; i < totalTokens; i++) {
-            if (internalTokenId == internalIdsByAddress[depositor][i]) {
-                delete internalIdsByAddress[depositor][i];
-                break;
-            }
-        }
-        totalLockedTokensByAddress[depositor]--;
         totalDepositedTokens--;
 
         emit TokenUnlocked(internalTokenId, msg.sender);
@@ -89,7 +73,6 @@ contract NFTLock is INFTLock, IERC721Receiver {
     function withdraw(uint256 internalTokenId) external override {
 
         NFT storage token = lockedTokenById[internalTokenId];
-        address depositor = token.depositor;
         address sendTo = token.depositor;
 
         if (isMintedOnTz(internalTokenId)) {
@@ -106,7 +89,7 @@ contract NFTLock is INFTLock, IERC721Receiver {
         ERC721(token.tokenContractAddress).safeTransferFrom(address(this), sendTo, externalTokenId);
 
         // delete NFT from the storage
-        unlockToken(internalTokenId, depositor);
+        unlockToken(internalTokenId);
 
         emit NFTWithdrawn(internalTokenId, sendTo);
     }
@@ -121,28 +104,5 @@ contract NFTLock is INFTLock, IERC721Receiver {
     function isBurnedOnTz(uint256 internalTokenId) internal pure returns (bool, address) {
         internalTokenId++;
         return (true, address(0));
-    }
-
-    function getUserNFTs() external view override returns (
-        uint256[] memory externalTokenIds,
-        uint256[] memory internalTokenIds,
-        address[] memory tokenContractAddresses) {
-
-        uint256 totalTokens = totalLockedTokensByAddress[msg.sender];
-
-        externalTokenIds = new uint[](totalTokens);
-        tokenContractAddresses = new address[](totalTokens);
-
-        for (uint i = 0; i < totalTokens; i++) {
-
-            uint256 internalTokenId = internalIdsByAddress[msg.sender][i];
-            NFT storage token = lockedTokenById[internalTokenId];
-
-            externalTokenIds[i] = token.externalTokenId;
-            tokenContractAddresses[i] = token.tokenContractAddress;
-            internalTokenIds[i] = internalTokenId;
-        }
-
-        return (externalTokenIds, internalTokenIds, tokenContractAddresses);
     }
 }
