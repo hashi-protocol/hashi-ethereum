@@ -3,15 +3,17 @@
 pragma solidity 0.8.6;
 
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
+import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import "@openzeppelin/contracts/utils/Counters.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
 contract tzNFT is ERC721URIStorage, Ownable {
-    using Counters for Counters.Counter;
-    Counters.Counter private _tokenIds;
 
-    mapping (address => mapping (uint256 => uint256)) internalIdsByAddress;
-    mapping (address => uint256) totalWTokensByAddress;
+    using EnumerableSet for EnumerableSet.UintSet;
+    using Counters for Counters.Counter;
+
+    Counters.Counter private _tokenIds;
+    mapping (address => EnumerableSet.UintSet) tokenIdsByAddress;
 
     /** @dev Events
     *
@@ -49,22 +51,13 @@ contract tzNFT is ERC721URIStorage, Ownable {
     }
 
     function removeTokenOwnership(address from, uint256 tokenId) internal {
-        uint256 totalTokens = totalWTokensByAddress[from];
-        for (uint256 i; i < totalTokens; i++) {
-            if (tokenId == internalIdsByAddress[from][i]) {
-                delete internalIdsByAddress[from][i];
-                break;
-            }
-        }
-        totalWTokensByAddress[from]--;
+        tokenIdsByAddress[from].remove(tokenId);
 
         emit OwnershipRemoved(from, tokenId);
     }
 
     function assignTokenOwnership(address recipient, uint256 tokenId) internal {
-        uint256 totalTokens = totalWTokensByAddress[recipient];
-        internalIdsByAddress[recipient][totalTokens] = tokenId;
-        totalWTokensByAddress[recipient]++;
+        tokenIdsByAddress[recipient].add(tokenId);
 
         emit OwnershipAssigned(recipient, tokenId);
     }
@@ -73,13 +66,14 @@ contract tzNFT is ERC721URIStorage, Ownable {
         string[] memory tokenURIs,
         uint256[] memory tokenIds) {
 
-        uint256 totalTokens = totalWTokensByAddress[msg.sender];
+        EnumerableSet.UintSet storage tokensSet = tokenIdsByAddress[msg.sender];
+        uint256 totalTokens = tokensSet.length();
         tokenURIs = new string[](totalTokens);
         tokenIds = new uint[](totalTokens);
 
         for (uint i = 0; i < totalTokens; i++) {
 
-            uint256 tokenId = internalIdsByAddress[msg.sender][i];
+            uint256 tokenId = tokensSet.at(i);
             tokenURIs[i] = tokenURI(tokenId);
             tokenIds[i] = tokenId;
         }

@@ -19,7 +19,7 @@ contract NFTLock is INFTLock, IERC721Receiver {
 
     uint256[] releasedIds;
 
-    uint256 totalDepositedTokens;
+    uint256 totalLockedTokens;
 
     /** @dev Events
     *
@@ -52,11 +52,11 @@ contract NFTLock is INFTLock, IERC721Receiver {
             internalTokenId = releasedIds[releasedIds.length - 1];
             delete releasedIds[releasedIds.length - 1];
         } else {
-            internalTokenId = totalDepositedTokens;
+            internalTokenId = totalLockedTokens;
         }
 
         lockedTokenById[internalTokenId] = token;
-        totalDepositedTokens++;
+        totalLockedTokens++;
 
         emit TokenLocked(internalTokenId, token.depositor);
     }
@@ -65,7 +65,7 @@ contract NFTLock is INFTLock, IERC721Receiver {
 
         releasedIds.push(internalTokenId);
         delete lockedTokenById[internalTokenId];
-        totalDepositedTokens--;
+        totalLockedTokens--;
 
         emit TokenUnlocked(internalTokenId, msg.sender);
     }
