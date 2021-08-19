@@ -40,8 +40,9 @@ contract tzNFT is ERC721URIStorage, Ownable {
     }
 
     function burnTzNFT(uint256 tokenId) public {
-        super._burn(tokenId);
         removeTokenOwnership(ownerOf(tokenId),tokenId);
+        super._burn(tokenId);
+        
     }
 
     function _beforeTokenTransfer(address from, address to, uint256 tokenId) internal override(ERC721) {
@@ -61,7 +62,12 @@ contract tzNFT is ERC721URIStorage, Ownable {
 
         emit OwnershipAssigned(recipient, tokenId);
     }
-
+    
+    function isBurned(uint256 tokenId) external view returns (bool) {
+        return !super._exists(tokenId);
+        
+    }
+    
     function getUserNFTs() external view returns (
         string[] memory tokenURIs,
         uint256[] memory tokenIds) {
