@@ -69,6 +69,18 @@ contract NFTLock is INFTLock, IERC721Receiver {
 
         emit TokenUnlocked(internalTokenId, msg.sender);
     }
+    
+    //do not work if externalId = 0
+    function isLocked(uint256 internalTokenId) external view returns (bool) {
+        
+        if ( 0 == lockedTokenById[internalTokenId].externalTokenId) {
+            return true;
+        }
+        
+        else {
+            return false;
+        }
+    }
 
     function withdraw(uint256 internalTokenId) external override {
 
