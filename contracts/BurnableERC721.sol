@@ -7,7 +7,7 @@ import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import "@openzeppelin/contracts/utils/Counters.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
-contract tzNFT is ERC721URIStorage, Ownable {
+contract BurnableERC721 is ERC721URIStorage, Ownable {
     using EnumerableSet for EnumerableSet.UintSet;
     using Counters for Counters.Counter;
 

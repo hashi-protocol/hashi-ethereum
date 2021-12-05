@@ -5,9 +5,9 @@ pragma solidity 0.8.7;
 import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 
-import "./INFTLock.sol";
+import "./ILocker.sol";
 
-contract NFTLock is INFTLock, IERC721Receiver {
+contract Locker is ILocker, IERC721Receiver {
     struct NFT {
         uint256 externalTokenId;
         address tokenContractAddress;
