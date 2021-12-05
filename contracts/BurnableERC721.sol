@@ -22,7 +22,7 @@ contract BurnableERC721 is ERC721URIStorage, Ownable {
 
     constructor() ERC721("tzNFT", "NFT") {}
 
-    function mintTzNFT(address recipient, string memory tokenURI)
+    function mint(address recipient, string memory tokenURI)
         public
         onlyOwner
         returns (uint256)
@@ -38,7 +38,7 @@ contract BurnableERC721 is ERC721URIStorage, Ownable {
         return newItemId;
     }
 
-    function burnTzNFT(uint256 tokenId) public {
+    function burn(uint256 tokenId) public {
         super._burn(tokenId);
         removeTokenOwnership(ownerOf(tokenId), tokenId);
     }
